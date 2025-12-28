@@ -10,6 +10,8 @@ A ComfyUI custom node for generating dynamic scrolling lyrics videos with smooth
 
 [效果演示](example/example.mp4)
 
+[工作流下载](example/example-workflow2.json)
+
 🔗 **GitHub Repository**: [https://github.com/ahkimkoo/Comfyui-Lyrics](https://github.com/ahkimkoo/Comfyui-Lyrics)
 
 ## ✨ Features (功能特性)
