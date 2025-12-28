@@ -1,0 +1,1496 @@
+{
+  "id": "cf09a78e-7e86-4f73-af82-b759021f4459",
+  "revision": 0,
+  "last_node_id": 27,
+  "last_link_id": 46,
+  "nodes": [
+    {
+      "id": 10,
+      "type": "ImageFromBatch+",
+      "pos": [
+        2397.729060294951,
+        4810.838485554956
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 22
+        },
+        {
+          "name": "start",
+          "type": "INT",
+          "widget": {
+            "name": "start"
+          },
+          "link": 20
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "widget": {
+            "name": "length"
+          },
+          "link": 42
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            29
+          ]
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui_essentials",
+        "ver": "1.1.0",
+        "Node name for S&R": "ImageFromBatch+"
+      },
+      "widgets_values": [
+        0,
+        -1
+      ]
+    },
+    {
+      "id": 17,
+      "type": "LayerUtility: ImageBlend",
+      "pos": [
+        2931.456583772625,
+        4774.12742315874
+      ],
+      "size": [
+        270,
+        146
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "background_image",
+          "type": "IMAGE",
+          "link": 29
+        },
+        {
+          "name": "layer_image",
+          "type": "IMAGE",
+          "link": 30
+        },
+        {
+          "name": "layer_mask",
+          "shape": 7,
+          "type": "MASK",
+          "link": 31
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            33
+          ]
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui_layerstyle",
+        "ver": "1.0.90",
+        "Node name for S&R": "LayerUtility: ImageBlend"
+      },
+      "widgets_values": [
+        true,
+        "normal",
+        100
+      ]
+    },
+    {
+      "id": 18,
+      "type": "SplitImageWithAlpha",
+      "pos": [
+        2714.190525685164,
+        4970.205752720131
+      ],
+      "size": [
+        178.4166015625,
+        46
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 34
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            30
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            31
+          ]
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfy-core",
+        "ver": "0.3.68",
+        "Node name for S&R": "SplitImageWithAlpha"
+      }
+    },
+    {
+      "id": 9,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        3855.1469479893444,
+        4352.8050491475
+      ],
+      "size": [
+        315.899281355757,
+        262
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 18
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "meta_batch",
+          "shape": 7,
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null
+        }
+      ],
+      "title": "保存完整的透明视频",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "1.7.9",
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 8,
+        "loop_count": 0,
+        "filename_prefix": "AnimateDiff",
+        "format": "video/ProRes",
+        "profile": "4444",
+        "pingpong": false,
+        "save_output": true,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "AnimateDiff_00020.mov",
+            "subfolder": "",
+            "type": "output",
+            "format": "video/ProRes",
+            "frame_rate": 8,
+            "workflow": "AnimateDiff_00020.png",
+            "fullpath": "/home/jovyan/work/python/ComfyUI/output/AnimateDiff_00020.mov"
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        3285.385882557182,
+        4549.596841923079
+      ],
+      "size": [
+        315.899281355757,
+        862.6074458360991
+      ],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 33
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 44
+        },
+        {
+          "name": "meta_batch",
+          "shape": 7,
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        },
+        {
+          "name": "frame_rate",
+          "type": "FLOAT",
+          "widget": {
+            "name": "frame_rate"
+          },
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null
+        }
+      ],
+      "title": "预览限定的帧数",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "1.7.9",
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 8,
+        "loop_count": 0,
+        "filename_prefix": "AnimateDiff",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": false,
+        "trim_to_audio": false,
+        "pingpong": false,
+        "save_output": true,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "AnimateDiff_00021-audio.mp4",
+            "subfolder": "",
+            "type": "output",
+            "format": "video/h264-mp4",
+            "frame_rate": 30,
+            "workflow": "AnimateDiff_00021.png",
+            "fullpath": "/home/jovyan/work/python/ComfyUI/output/AnimateDiff_00021-audio.mp4"
+          }
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "Note",
+      "pos": [
+        3850.8845468690306,
+        4203.40356428543
+      ],
+      "size": [
+        291.7807678589047,
+        88
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "保存透明视频",
+      "properties": {},
+      "widgets_values": [
+        "由于透明视频的原因，你什么都看不到。\n有下角拉大，在预览区域，右键“save preview”"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 19,
+      "type": "Note",
+      "pos": [
+        3289.2957057910858,
+        4406.237863151417
+      ],
+      "size": [
+        246.24653750123298,
+        88
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "只是预览不是完整合成",
+      "properties": {},
+      "widgets_values": [
+        "只是预览一小段效果不是完整合成。"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 13,
+      "type": "ImageFromBatch+",
+      "pos": [
+        2395.706491630977,
+        4967.341344784652
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 23
+        },
+        {
+          "name": "start",
+          "type": "INT",
+          "widget": {
+            "name": "start"
+          },
+          "link": 21
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "widget": {
+            "name": "length"
+          },
+          "link": 43
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            34
+          ]
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui_essentials",
+        "ver": "1.1.0",
+        "Node name for S&R": "ImageFromBatch+"
+      },
+      "widgets_values": [
+        0,
+        -1
+      ]
+    },
+    {
+      "id": 6,
+      "type": "VHS_VideoInfo",
+      "pos": [
+        1259.6894896886492,
+        4739.4939568749
+      ],
+      "size": [
+        224.09356689453125,
+        206
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "name": "source_fps🟨",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "source_frame_count🟨",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "source_duration🟨",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "source_width🟨",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "source_height🟨",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "loaded_fps🟦",
+          "type": "FLOAT",
+          "links": [
+            5,
+            14,
+            36,
+            41
+          ]
+        },
+        {
+          "name": "loaded_frame_count🟦",
+          "type": "INT",
+          "links": [
+            19
+          ]
+        },
+        {
+          "name": "loaded_duration🟦",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "loaded_width🟦",
+          "type": "INT",
+          "links": [
+            6
+          ]
+        },
+        {
+          "name": "loaded_height🟦",
+          "type": "INT",
+          "links": [
+            7,
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "1.7.9",
+        "Node name for S&R": "VHS_VideoInfo"
+      },
+      "widgets_values": {}
+    },
+    {
+      "id": 11,
+      "type": "SimpleMath+",
+      "pos": [
+        1781.0405141989,
+        5146.073799022872
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": 19
+        },
+        {
+          "name": "b",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            20,
+            21,
+            35
+          ]
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": null
+        }
+      ],
+      "title": "预览起点",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui_essentials",
+        "ver": "1.1.0",
+        "Node name for S&R": "SimpleMath+"
+      },
+      "widgets_values": [
+        "a/2"
+      ]
+    },
+    {
+      "id": 25,
+      "type": "SimpleMath+",
+      "pos": [
+        1784.8294519194978,
+        5276.60187944297
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": 40
+        },
+        {
+          "name": "b",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": 41
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            42,
+            43
+          ]
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        }
+      ],
+      "title": "预览帧数",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui_essentials",
+        "ver": "1.1.0",
+        "Node name for S&R": "SimpleMath+"
+      },
+      "widgets_values": [
+        "a*b"
+      ]
+    },
+    {
+      "id": 23,
+      "type": "SimpleMath+",
+      "pos": [
+        2248.450706470328,
+        5290.400131066513
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": 35
+        },
+        {
+          "name": "b",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": 36
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            37
+          ]
+        }
+      ],
+      "title": "预览音频起点",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui_essentials",
+        "ver": "1.1.0",
+        "Node name for S&R": "SimpleMath+"
+      },
+      "widgets_values": [
+        "a/b*1000"
+      ]
+    },
+    {
+      "id": 24,
+      "type": "SimpleMath+",
+      "pos": [
+        2258.109482606803,
+        5433.901947951293
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": 38
+        },
+        {
+          "name": "b",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            39
+          ]
+        }
+      ],
+      "title": "预览音频长度",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui_essentials",
+        "ver": "1.1.0",
+        "Node name for S&R": "SimpleMath+"
+      },
+      "widgets_values": [
+        "a*1000"
+      ]
+    },
+    {
+      "id": 21,
+      "type": "Audio Cut (mtb)",
+      "pos": [
+        2621.0035003058224,
+        5151.037789668789
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 45
+        },
+        {
+          "name": "length",
+          "type": "FLOAT",
+          "widget": {
+            "name": "length"
+          },
+          "link": 39
+        },
+        {
+          "name": "offset",
+          "type": "FLOAT",
+          "widget": {
+            "name": "offset"
+          },
+          "link": 37
+        }
+      ],
+      "outputs": [
+        {
+          "name": "cut_audio",
+          "type": "AUDIO",
+          "links": [
+            44
+          ]
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfy-mtb",
+        "ver": "0.5.4",
+        "Node name for S&R": "Audio Cut (mtb)"
+      },
+      "widgets_values": [
+        1000,
+        0
+      ]
+    },
+    {
+      "id": 5,
+      "type": "VHS_LoadVideo",
+      "pos": [
+        934.6893481425323,
+        4534.2307095826145
+      ],
+      "size": [
+        251.5243377685547,
+        727.0423676921275
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "meta_batch",
+          "shape": 7,
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            22
+          ]
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            3,
+            45,
+            46
+          ]
+        },
+        {
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui-videohelpersuite",
+        "ver": "1.7.9",
+        "Node name for S&R": "VHS_LoadVideo"
+      },
+      "widgets_values": {
+        "video": "test.mp4",
+        "force_rate": 0,
+        "custom_width": 0,
+        "custom_height": 0,
+        "frame_load_cap": 0,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "AnimateDiff",
+        "choose video to upload": "image",
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "test.mp4",
+            "type": "input",
+            "format": "video/mp4",
+            "force_rate": 0,
+            "custom_width": 0,
+            "custom_height": 0,
+            "frame_load_cap": 0,
+            "skip_first_frames": 0,
+            "select_every_nth": 1
+          }
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "Note",
+      "pos": [
+        1373.1755865807756,
+        4229.803467069794
+      ],
+      "size": [
+        301.43954399538006,
+        88
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 4,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "如果你不输入SRT，应该先分离出人声输入给Lyrics Scroll Effect"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 26,
+      "type": "AudioSeparation",
+      "pos": [
+        1364.896635606652,
+        4370.545633629881
+      ],
+      "size": [
+        270,
+        166
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 46
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Bass",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "Drums",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "Other",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "Vocals",
+          "type": "AUDIO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "audio-separation-nodes-comfyui",
+        "ver": "1.4.0",
+        "Node name for S&R": "AudioSeparation"
+      },
+      "widgets_values": [
+        "linear",
+        10,
+        0.1
+      ]
+    },
+    {
+      "id": 22,
+      "type": "easy int",
+      "pos": [
+        1383.3003296745778,
+        5262.8036278194395
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "int",
+          "type": "INT",
+          "links": [
+            38,
+            40
+          ]
+        }
+      ],
+      "title": "预览长度（s）",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui-easy-use",
+        "ver": "1.3.4",
+        "Node name for S&R": "easy int"
+      },
+      "widgets_values": [
+        10
+      ]
+    },
+    {
+      "id": 7,
+      "type": "SimpleMath+",
+      "pos": [
+        1391.970249054784,
+        5090.7221800194675
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": 8
+        },
+        {
+          "name": "b",
+          "shape": 7,
+          "type": "INT,FLOAT",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            9
+          ]
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": null
+        }
+      ],
+      "title": "字幕坐标Y点",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui_essentials",
+        "ver": "1.1.0",
+        "Node name for S&R": "SimpleMath+"
+      },
+      "widgets_values": [
+        "a/1.8+0.5"
+      ]
+    },
+    {
+      "id": 16,
+      "type": "MarkdownNote",
+      "pos": [
+        946.3539662721469,
+        3556.7348340860635
+      ],
+      "size": [
+        1473.9522476379698,
+        603.4127805302137
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "字幕特效插件-https://github.com/ahkimkoo/Comfyui-Lyrics",
+      "properties": {},
+      "widgets_values": [
+        "# 字幕特效插件\n\n## GitHub: https://github.com/ahkimkoo/Comfyui-Lyrics\n\n可以直接输入SRT字幕格式，如果不输入，会用whisper识别。\n\nttf字体文件放到models/fonts目录下。\n\n## 注意：把工作流生成的视频存成透明背景的MOV，用视频剪辑软件去合成，由于comfyui本身的原因，用blend节点将原视频和字幕效果的合成稍微长一点的视频（10秒以上），就很容易爆内存。\n\n## 字体颜色建议\n\n### 1. 经典万能型\n\n适用场景： 流行歌曲、Vlog 字幕、大部分视频背景（清晰度最高）。 这款设计主打高对比度，确保在深色或杂乱的视频背景上依然清晰可见。\n\n* 字体颜色 (Fill): #FFFFFF (纯白)\n* 边框颜色 (Stroke): #000000 (纯黑) \n* 阴影颜色 (Shadow): #333333 (深灰)\n\n### 2. 梦幻霓虹型\n\n适用场景： 电子音乐、Rap、夜景视频、赛博朋克风格。 利用发光效果营造迷离的都市感。\n\n* 字体颜色 (Fill): #E0FFFF (淡青色/亮白青)\n* 边框颜色 (Stroke): #00FFFF (高亮青色) - 建议描边较细\n* 阴影颜色 (Shadow): #008B8B (深青色) 或 #9400D3 (紫罗兰色)\n\n### 3. 复古胶片型\n\n适用场景： 港风歌曲、Lo-Fi 音乐、怀旧胶片感视频。 模仿 80-90 年代 KTV 或老电影字幕的配色，温暖且有质感。\n\n* 字体颜色 (Fill): #FFD700 (复古金/橘黄)\n* 边框颜色 (Stroke): #8B4513 (赭石色/深褐) - 中等描边\n* 阴影颜色 (Shadow): #000000 (黑色)\n\n#### 4. 纯净氧气型\n\n适用场景： 民谣、钢琴曲、唯美风景、日系小清新。 弱化边框的攻击性，用柔和的投影来区分背景，看起来非常温柔。\n\n* 字体颜色 (Fill): #F0F8FF (爱丽丝蓝/近乎白)\n* 边框颜色 (Stroke): 无 或 #FFFFFF (同色描边，仅用于增加字体厚度)\n* 阴影颜色 (Shadow): #708090 (石板灰)"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 1,
+      "type": "LyricsScroll",
+      "pos": [
+        1847.4840016378712,
+        4483.181713754239
+      ],
+      "size": [
+        400,
+        588
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 3
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": 6
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": 7
+        },
+        {
+          "name": "y_pos",
+          "type": "INT",
+          "widget": {
+            "name": "y_pos"
+          },
+          "link": 9
+        },
+        {
+          "name": "frame_rate",
+          "type": "FLOAT",
+          "widget": {
+            "name": "frame_rate"
+          },
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            18,
+            23
+          ]
+        },
+        {
+          "name": "subtitles",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "cnr_id": "comfyui-lyrics",
+        "ver": "1.1.1",
+        "Node name for S&R": "LyricsScroll"
+      },
+      "widgets_values": [
+        736,
+        1280,
+        50,
+        50,
+        640,
+        50,
+        60,
+        0,
+        20,
+        "#FFFFFF",
+        2,
+        "#000000",
+        "#333333",
+        3,
+        3,
+        0.8,
+        "ZhanKuWenYiTi-2.ttf",
+        30,
+        8,
+        "简体中文",
+        "1\n00:00:01,200 --> 00:00:07,633\n在这灰色的丛林，我们丢了远方\n\n2\n00:00:08,800 --> 00:00:13,733\n当狂飙的梦，缩成账单上的重量\n\n3\n00:00:15,766 --> 00:00:18,100\n别把这寂静当成坠落\n\n4\n00:00:18,100 --> 00:00:22,433\n那是双脚触碰到了土壤\n\n5\n00:00:22,633 --> 00:00:25,166\n在不再亢奋的午后\n\n6\n00:00:25,400 --> 00:00:28,166\n才听见心跳的质感\n\n7\n00:00:30,733 --> 00:00:37,166\n不是世界冷了，是虚火终于熄灭\n\n8\n00:00:37,900 --> 00:00:43,366\n让我们在柴米油盐里，重新握紧尊严\n\n9\n00:00:44,933 --> 00:00:46,833\n那些搏击过风浪的船长\n\n10\n00:00:46,833 --> 00:00:48,933\n请在潮汐间收起帆\n\n11\n00:00:49,800 --> 00:00:54,533\n不必再为虚妄的体面\n\n12\n00:00:56,333 --> 00:00:58,433\n透支灵魂的底线\n\n"
+      ]
+    }
+  ],
+  "links": [
+    [
+      3,
+      5,
+      2,
+      1,
+      0,
+      "AUDIO"
+    ],
+    [
+      4,
+      5,
+      3,
+      6,
+      0,
+      "VHS_VIDEOINFO"
+    ],
+    [
+      5,
+      6,
+      5,
+      1,
+      4,
+      "FLOAT"
+    ],
+    [
+      6,
+      6,
+      8,
+      1,
+      1,
+      "INT"
+    ],
+    [
+      7,
+      6,
+      9,
+      1,
+      2,
+      "INT"
+    ],
+    [
+      8,
+      6,
+      9,
+      7,
+      0,
+      "INT,FLOAT"
+    ],
+    [
+      9,
+      7,
+      0,
+      1,
+      3,
+      "INT"
+    ],
+    [
+      14,
+      6,
+      5,
+      3,
+      4,
+      "FLOAT"
+    ],
+    [
+      18,
+      1,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      19,
+      6,
+      6,
+      11,
+      0,
+      "INT,FLOAT"
+    ],
+    [
+      20,
+      11,
+      0,
+      10,
+      1,
+      "INT"
+    ],
+    [
+      21,
+      11,
+      0,
+      13,
+      1,
+      "INT"
+    ],
+    [
+      22,
+      5,
+      0,
+      10,
+      0,
+      "IMAGE"
+    ],
+    [
+      23,
+      1,
+      0,
+      13,
+      0,
+      "IMAGE"
+    ],
+    [
+      29,
+      10,
+      0,
+      17,
+      0,
+      "IMAGE"
+    ],
+    [
+      30,
+      18,
+      0,
+      17,
+      1,
+      "IMAGE"
+    ],
+    [
+      31,
+      18,
+      1,
+      17,
+      2,
+      "MASK"
+    ],
+    [
+      33,
+      17,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ],
+    [
+      34,
+      13,
+      0,
+      18,
+      0,
+      "IMAGE"
+    ],
+    [
+      35,
+      11,
+      0,
+      23,
+      0,
+      "INT,FLOAT"
+    ],
+    [
+      36,
+      6,
+      5,
+      23,
+      1,
+      "INT,FLOAT"
+    ],
+    [
+      37,
+      23,
+      1,
+      21,
+      2,
+      "FLOAT"
+    ],
+    [
+      38,
+      22,
+      0,
+      24,
+      0,
+      "INT,FLOAT"
+    ],
+    [
+      39,
+      24,
+      1,
+      21,
+      1,
+      "FLOAT"
+    ],
+    [
+      40,
+      22,
+      0,
+      25,
+      0,
+      "INT,FLOAT"
+    ],
+    [
+      41,
+      6,
+      5,
+      25,
+      1,
+      "INT,FLOAT"
+    ],
+    [
+      42,
+      25,
+      0,
+      10,
+      2,
+      "INT"
+    ],
+    [
+      43,
+      25,
+      0,
+      13,
+      2,
+      "INT"
+    ],
+    [
+      44,
+      21,
+      0,
+      3,
+      1,
+      "AUDIO"
+    ],
+    [
+      45,
+      5,
+      2,
+      21,
+      0,
+      "AUDIO"
+    ],
+    [
+      46,
+      5,
+      2,
+      26,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ue_links": [],
+    "ds": {
+      "scale": 0.724729500000011,
+      "offset": [
+        -1898.4767938436437,
+        -4454.389748123687
+      ]
+    },
+    "links_added_by_ue": [],
+    "frontendVersion": "1.28.8",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
