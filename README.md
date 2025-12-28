@@ -4,7 +4,7 @@ A ComfyUI custom node for generating dynamic scrolling lyrics videos with smooth
 
 一个用于生成动态滚动歌词视频的 ComfyUI 自定义节点。支持使用 OpenAI Whisper 进行语音转文字，或导入现有的 SRT 字幕。
 
-![工作流](example/workflow.png)
+![工作流](example/workflow2.png)
 
 [效果演示](example/example.mp4)
 
