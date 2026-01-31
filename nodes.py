@@ -10,16 +10,21 @@ import tempfile
 import random
 from datetime import datetime
 
-# Try to import opencv for video writing
+# Try to import imageio for video writing
 try:
-    import cv2
+    import imageio.v3 as iio
 
-    CV2_AVAILABLE = True
+    IMAGEIO_AVAILABLE = True
 except ImportError:
-    CV2_AVAILABLE = False
-    print(
-        "Warning: opencv-python not found. Install it with: pip install opencv-python"
-    )
+    try:
+        import imageio
+
+        IMAGEIO_AVAILABLE = True
+    except ImportError:
+        IMAGEIO_AVAILABLE = False
+        print(
+            "Warning: imageio not found. Install it with: pip install imageio[ffmpeg]"
+        )
 
 # Attempt to import whisper
 try:
@@ -1137,67 +1142,55 @@ class LyricsScroll:
         video_path = os.path.join(output_dir, output_filename)
         print(f"LyricsScroll: Output path: {video_path}")
 
-        if not CV2_AVAILABLE:
+        if not IMAGEIO_AVAILABLE:
             raise ImportError(
-                "opencv-python is required for video export. Install with: pip install opencv-python"
+                "imageio[ffmpeg] is required for video export. Install with: pip install imageio[ffmpeg]"
             )
 
-        # Initialize video writer with VP8 codec for WebM with alpha support
-        # Note: VP8/VP9 supports alpha channel in WebM
-        fourcc = cv2.VideoWriter_fourcc(*"VP80")
-        video_writer = cv2.VideoWriter(video_path, fourcc, frame_rate, (width, height))
+        print(f"LyricsScroll: Using imageio-ffmpeg for video export...")
 
-        if not video_writer.isOpened():
-            # Fallback to uncompressed if VP8 not available
-            print("LyricsScroll: VP80 codec not available, trying uncompressed...")
-            fourcc = 0  # Uncompressed
-            video_writer = cv2.VideoWriter(
-                video_path, fourcc, frame_rate, (width, height)
-            )
-
-        # Process frames and write directly to video
+        # Process frames and write directly to video using imageio
         total_batches = (total_frames + batch_size - 1) // batch_size
 
-        for batch_idx in range(total_batches):
-            start_frame = batch_idx * batch_size
-            end_frame = min(start_frame + batch_size, total_frames)
+        # Open video writer with imageio
+        with iio.imopen(
+            video_path,
+            "w",
+            fps=frame_rate,
+            codec="vp9",
+            plugin="ffmpeg",
+            output_params={"pix_fmt": "yuva420p"},
+        ) as writer:
+            print(f"LyricsScroll: Video writer opened for {total_frames} frames")
 
-            print(
-                f"LyricsScroll: Processing batch {batch_idx + 1}/{total_batches} (frames {start_frame}-{end_frame - 1})..."
-            )
+            for batch_idx in range(total_batches):
+                start_frame = batch_idx * batch_size
+                end_frame = min(start_frame + batch_size, total_frames)
 
-            # Process each frame in this batch
-            for f in range(start_frame, end_frame):
-                frame_np = generate_single_frame(f)
-
-                # Convert from RGBA (float32 [0,1]) to BGR + alpha for video
-                # OpenCV expects BGR for color images
-                frame_bgr = (frame_np[:, :, :3] * 255).astype(np.uint8)
-                # Swap RGB to BGR
-                frame_bgr = cv2.cvtColor(frame_bgr, cv2.COLOR_RGB2BGR)
-                # Add alpha channel
-                alpha = (frame_np[:, :, 3] * 255).astype(np.uint8)
-
-                # Create BGRA frame
-                frame_bgra = cv2.merge(
-                    [frame_bgr[:, :, 0], frame_bgr[:, :, 1], frame_bgr[:, :, 2], alpha]
+                print(
+                    f"LyricsScroll: Processing batch {batch_idx + 1}/{total_batches} (frames {start_frame}-{end_frame - 1})..."
                 )
 
-                # Write frame to video
-                video_writer.write(frame_bgra)
+                # Process each frame in this batch
+                for f in range(start_frame, end_frame):
+                    frame_np = generate_single_frame(f)
 
-                # Cleanup after each frame to minimize memory
-                del frame_np, frame_bgr, frame_bgra, alpha
+                    # Convert from RGBA (float32 [0,1]) to uint8 [0,255]
+                    frame_uint8 = (frame_np * 255).astype(np.uint8)
 
-            # Cleanup memory
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
+                    # Write frame to video
+                    writer.write(frame_uint8)
 
-            print(f"LyricsScroll: Batch {batch_idx + 1}/{total_batches} completed")
+                    # Cleanup after each frame to minimize memory
+                    del frame_np, frame_uint8
 
-        # Release video writer
-        video_writer.release()
+                # Cleanup memory
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+
+                print(f"LyricsScroll: Batch {batch_idx + 1}/{total_batches} completed")
+
         print(f"LyricsScroll: Video saved to {video_path}")
 
         return (video_path, srt_text)

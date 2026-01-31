@@ -3,4 +3,4 @@ Pillow
 numpy
 torch
 torchaudio
-opencv-python
+imageio[ffmpeg]
