@@ -36,11 +36,11 @@ class LyricsScroll:
 
         return {
             "required": {
-                "width": ("INT", {"default": 512, "min": 64, "max": 4096}),
-                "height": ("INT", {"default": 512, "min": 64, "max": 4096}),
+                "width": ("INT", {"default": 720, "min": 64, "max": 4096}),
+                "height": ("INT", {"default": 1280, "min": 64, "max": 4096}),
                 "margin_left": ("INT", {"default": 50, "min": 0, "max": 4096}),
                 "margin_right": ("INT", {"default": 50, "min": 0, "max": 4096}),
-                "y_pos": ("INT", {"default": 400, "min": 0, "max": 4096}),
+                "y_pos": ("INT", {"default": 640, "min": 0, "max": 4096}),
                 "font_size": ("INT", {"default": 30, "min": 10, "max": 200}), # Inactive size
                 "active_font_size": ("INT", {"default": 40, "min": 10, "max": 200}), # Active size
                 "letter_spacing": ("INT", {"default": 0, "min": -10, "max": 200}),
@@ -59,7 +59,8 @@ class LyricsScroll:
             },
             "optional": {
                 "audio": ("AUDIO",),
-                "text": ("STRING", {"multiline": True, "default": "", "forceInput": False}),
+                "lyrics": ("STRING", {"multiline": True, "default": "1\n00:00:00,000 --> 00:00:05,000\n第一行字幕\n\n2\n00:00:05,000 --> 00:00:10,000\n第二行字幕", "forceInput": False}),
+                "reference_text": ("STRING", {"multiline": True, "default": "", "forceInput": False}),
             }
         }
 
@@ -196,24 +197,266 @@ class LyricsScroll:
             subs.append({'start': start, 'end': end, 'text': content})
         return subs
 
+    def align_text_to_timeline(self, timeline_subs, reference_text, max_chars=20):
+        """
+        Align reference text to Whisper timeline using fuzzy matching.
+
+        Uses Whisper's detected timing segments and matches them to the
+        reference text using sliding window similarity matching. This handles
+        cases where Whisper misrecognizes words (extra/missing/wrong characters).
+
+        Ignores:
+        - Whitespace (spaces, newlines, tabs)
+        - Bracket tags like [Chorus], [Verse], [Intro bass, guitar], etc.
+
+        Args:
+            timeline_subs: List of {'start', 'end', 'text'} from Whisper
+            reference_text: The correct/original text to use
+            max_chars: Maximum characters per subtitle line
+
+        Returns:
+            List of {'start', 'end', 'text'} with aligned reference text
+        """
+        from difflib import SequenceMatcher
+        import re
+
+        ref_text = reference_text.strip()
+        if not ref_text:
+            return timeline_subs
+
+        # Remove bracket tags (e.g., [Chorus], [Verse 1], [Intro bass, guitar])
+        # Pattern matches [...] and removes it
+        ref_text_no_tags = re.sub(r'\[[^\]]*\]', '', ref_text)
+
+        # Remove all whitespace from reference for better matching
+        ref_clean = ref_text_no_tags.replace(' ', '').replace('\n', '').replace('\t', '').replace('\r', '')
+        ref_len = len(ref_clean)
+
+        # Build position mapping: clean_index -> original_index in ref_text_no_tags
+        clean_to_orig_no_tags = []
+        orig_idx = 0
+        for char in ref_text_no_tags:
+            if not char.isspace():
+                clean_to_orig_no_tags.append(orig_idx)
+            orig_idx += 1
+
+        # Pre-extract timing from Whisper segments
+        segments = []
+        for sub in timeline_subs:
+            clean_text = sub['text'].replace(' ', '').replace('\n', '')
+            if clean_text:
+                segments.append({
+                    'start': sub['start'],
+                    'end': sub['end'],
+                    'duration': sub['end'] - sub['start'],
+                    'text': clean_text
+                })
+
+        if not segments:
+            # Fallback to simple splitting
+            return self._split_reference_by_time(ref_text_no_tags, timeline_subs, max_chars)
+
+        total_audio_duration = segments[-1]['end'] - segments[0]['start']
+
+        aligned_subs = []
+        ref_pos = 0  # Position in clean text
+
+        for seg_idx, seg in enumerate(segments):
+            if ref_pos >= ref_len:
+                break
+
+            seg_len = len(seg['text'])
+            if seg_len == 0:
+                continue
+
+            # Calculate expected position based on time
+            time_ratio = seg['duration'] / total_audio_duration if total_audio_duration > 0 else 0
+            expected_pos_by_time = int(ref_len * (seg['start'] - segments[0]['start']) / total_audio_duration) if total_audio_duration > 0 else ref_pos
+
+            # Use both position heuristics
+            expected_pos = max(ref_pos, expected_pos_by_time - max_chars)
+            expected_pos = min(expected_pos, ref_len - max_chars)
+
+            # Determine window size
+            window_size = min(max_chars * 2, max(seg_len, max_chars))
+
+            best_match = None
+            best_score = 0
+            best_end = ref_pos
+            best_start = ref_pos
+
+            search_start = max(0, expected_pos - window_size)
+            search_end = min(ref_len, expected_pos + window_size * 2)
+
+            for start in range(search_start, search_end):
+                for size_adjust in [-2, -1, 0, 1, 2]:
+                    window_len = max(5, window_size + size_adjust)
+                    end = min(start + window_len, ref_len)
+                    window = ref_clean[start:end]
+
+                    if not window or len(window) < 3:
+                        continue
+
+                    similarity = SequenceMatcher(None, seg['text'], window).ratio()
+                    pos_distance = abs(start - expected_pos)
+                    pos_penalty = (pos_distance / ref_len) * 0.3
+                    len_ratio = min(len(window), seg_len) / max(len(window), seg_len)
+                    len_bonus = len_ratio * 0.1
+                    adjusted_score = similarity - pos_penalty + len_bonus
+
+                    if adjusted_score > best_score:
+                        best_score = adjusted_score
+                        best_match = window
+                        best_end = end
+                        best_start = start
+
+                        if similarity > 0.9:
+                            break
+                else:
+                    continue
+                break
+
+            if best_match:
+                # Use position mapping to get original text (without bracket tags)
+                orig_start = clean_to_orig_no_tags[best_start] if best_start < len(clean_to_orig_no_tags) else 0
+
+                # Extract from original (without bracket tags), but skip leading whitespace
+                aligned_text = ref_text_no_tags[orig_start:]
+                # Strip leading whitespace and take up to max_chars
+                aligned_text = aligned_text.lstrip()[:max_chars]
+
+                # Update ref_pos
+                ref_pos = best_end
+
+                if aligned_text.strip():
+                    aligned_subs.append({
+                        'start': seg['start'],
+                        'end': seg['end'],
+                        'text': aligned_text.strip()
+                    })
+
+        # Handle any remaining reference text
+        if ref_pos < ref_len and ref_pos < len(clean_to_orig_no_tags):
+            orig_start = clean_to_orig_no_tags[ref_pos] if ref_pos < len(clean_to_orig_no_tags) else 0
+            remaining = ref_text_no_tags[orig_start:]
+            if aligned_subs:
+                last_end = aligned_subs[-1]['end']
+            else:
+                last_end = 0
+
+            for i in range(0, len(remaining), max_chars):
+                chunk = remaining[i:i + max_chars].strip()
+                if chunk:
+                    aligned_subs.append({
+                        'start': last_end,
+                        'end': last_end + 2.0,
+                        'text': chunk
+                    })
+                    last_end += 2.0
+
+        return aligned_subs
+
+    def _split_reference_by_time(self, ref_text, timeline_subs, max_chars):
+        """Fallback: simply split reference text by time segments."""
+        if not timeline_subs:
+            return []
+
+        ref_len = len(ref_text)
+        total_duration = timeline_subs[-1]['end'] - timeline_subs[0]['start']
+        chars_per_second = ref_len / total_duration if total_duration > 0 else max_chars / 2
+
+        aligned_subs = []
+        text_index = 0
+
+        for sub in timeline_subs:
+            duration = sub['end'] - sub['start']
+            target_chars = min(max_chars, max(1, int(duration * chars_per_second)))
+
+            if text_index < ref_len:
+                chunk = ref_text[text_index:text_index + target_chars]
+                text_index += len(chunk)
+                if chunk.strip():
+                    aligned_subs.append({
+                        'start': sub['start'],
+                        'end': sub['end'],
+                        'text': chunk.strip()
+                    })
+
+        return aligned_subs
+
+    def _map_clean_to_original(self, original, cleaned, clean_pos, length):
+        """Map a position in cleaned text back to original text."""
+        clean_idx = 0
+        orig_idx = 0
+        target_clean_pos = clean_pos
+        target_length = 0
+
+        while orig_idx < len(original) and clean_idx < cleaned:
+            if original[orig_idx].isspace():
+                orig_idx += 1
+                continue
+
+            if clean_idx >= target_clean_pos:
+                return orig_idx
+
+            clean_idx += 1
+            orig_idx += 1
+
+        return max(0, target_clean_pos)
+
+    def _update_ref_pos(self, cleaned, current_pos, advance):
+        """Update reference position accounting for removed whitespace."""
+        # Count non-space characters to advance
+        count = 0
+        pos = current_pos
+        while pos < len(cleaned) and count < advance:
+            pos += 1
+            count += 1
+        return pos
+
     def transcribe_audio(self, audio_data, max_chars=20, prompt="简体中文"):
         if not WHISPER_AVAILABLE:
             raise ImportError("OpenAI Whisper is not installed. Please install it to generate subtitles automatically.")
-        
+
         waveform = audio_data['waveform']
         sample_rate = audio_data['sample_rate']
-        
+
+        print(f"LyricsScroll: transcribe_audio input - waveform.shape={waveform.shape}, sample_rate={sample_rate}")
+
+        # Handle different audio formats
+        # ComfyUI audio format can be:
+        # - 3D: (batch, channels, samples) -> remove batch -> (channels, samples)
+        # - 2D: (channels, samples) or (samples, channels) -> convert to mono
+        # - 1D: (samples) -> already mono
+
         if waveform.dim() == 3:
+            # (batch, channels, samples) -> (channels, samples)
             waveform = waveform[0]
+            print(f"LyricsScroll: Removed batch dimension, shape={waveform.shape}")
+
         if waveform.dim() == 2:
-            waveform = torch.mean(waveform, dim=0)
-            
+            # Determine if format is (channels, samples) or (samples, channels)
+            # Usually in audio: first dim is channels (small number like 1 or 2)
+            # second dim is samples (large number like millions)
+            if waveform.shape[0] <= waveform.shape[1]:
+                # Format is (channels, samples) - e.g., (2, 7066584)
+                # Average across channels to get mono: (samples,)
+                waveform = torch.mean(waveform, dim=0)
+                print(f"LyricsScroll: Converted (channels, samples) to mono, shape={waveform.shape}")
+            else:
+                # Format is (samples, channels) - e.g., (7066584, 2)
+                # Average across channels to get mono: (samples,)
+                waveform = torch.mean(waveform, dim=1)
+                print(f"LyricsScroll: Converted (samples, channels) to mono, shape={waveform.shape}")
+
+        print(f"LyricsScroll: After preprocessing - waveform.shape={waveform.shape}")
+
         if TORCHAUDIO_AVAILABLE and sample_rate != 16000:
             resampler = torchaudio.transforms.Resample(sample_rate, 16000)
             waveform = resampler(waveform)
         elif sample_rate != 16000:
              raise ImportError("Torchaudio required for resampling.")
-        
+
         print("LyricsScroll: Loading Whisper model...")
         model = whisper.load_model("base", device=self.device)
         print("LyricsScroll: Transcribing...")
@@ -269,44 +512,77 @@ class LyricsScroll:
             e_ms = (e_s - int(e_s)) * 1000
             
             srt_output += f"{i+1}\n{int(s_h):02}:{int(s_m):02}:{int(s_s):02},{int(s_ms):03} --> {int(e_h):02}:{int(e_m):02}:{int(e_s):02},{int(e_ms):03}\n{txt}\n\n"
-            
+
         return subs, srt_output
 
-    def generate_lyrics(self, width, height, margin_left, margin_right, y_pos, font_size, active_font_size, letter_spacing, line_gap, text_color, stroke_width, stroke_color, shadow_color, shadow_offset_x, shadow_offset_y, shadow_alpha, font_filename, frame_rate, max_chars_per_line, whisper_prompt, audio=None, text=""):
-        
+    def generate_lyrics(self, width, height, margin_left, margin_right, y_pos, font_size, active_font_size, letter_spacing, line_gap, text_color, stroke_width, stroke_color, shadow_color, shadow_offset_x, shadow_offset_y, shadow_alpha, font_filename, frame_rate, max_chars_per_line, whisper_prompt, audio=None, lyrics="", reference_text=""):
+
         self.font_cache = {}
 
         subs = []
         srt_text = ""
 
-        # 1. Try to use provided text
-        if text and text.strip():
-            print("LyricsScroll: Using provided text/SRT.")
-            subs = self.parse_srt(text)
-            srt_text = text
+        # 1. Try to use provided lyrics (SRT format)
+        if lyrics and lyrics.strip():
+            print("LyricsScroll: Using provided lyrics/SRT.")
+            subs = self.parse_srt(lyrics)
+            srt_text = lyrics
             if not subs:
-                print("LyricsScroll: Warning - Provided text is not valid SRT.")
-        
-        # 2. If no text, try Whisper (requires audio)
+                print("LyricsScroll: Warning - Provided lyrics is not valid SRT.")
+
+        # 2. If no SRT text, try Whisper (requires audio)
+        use_reference_align = False
         if not subs:
             if audio is not None:
-                print(f"LyricsScroll: No text provided. Running Whisper with max_chars={max_chars_per_line}, prompt='{whisper_prompt}'...")
+                if reference_text and reference_text.strip():
+                    print(f"LyricsScroll: Using Whisper with reference text alignment.")
+                    use_reference_align = True
+                else:
+                    print(f"LyricsScroll: No lyrics provided. Running Whisper with max_chars={max_chars_per_line}, prompt='{whisper_prompt}'...")
                 subs, srt_text = self.transcribe_audio(audio, max_chars=max_chars_per_line, prompt=whisper_prompt)
             else:
-                raise ValueError("LyricsScroll: Either 'audio' or 'text' (SRT) must be provided. If providing text only, ensure it is valid SRT format.")
+                raise ValueError("LyricsScroll: Either 'audio' or 'lyrics' (SRT) must be provided. If providing lyrics only, ensure it is valid SRT format.")
 
-        # 3. Determine Duration
+        # 3. Apply reference text alignment if provided
+        if use_reference_align and subs and reference_text and reference_text.strip():
+            print(f"LyricsScroll: Aligning reference text ({len(reference_text)} chars) to timeline ({len(subs)} segments)...")
+            subs = self.align_text_to_timeline(subs, reference_text, max_chars=max_chars_per_line)
+            # Regenerate SRT with aligned text
+            srt_output = ""
+            for i, sub in enumerate(subs):
+                s = sub['start']
+                e = sub['end']
+                txt = sub['text']
+
+                s_h, s_r = divmod(s, 3600)
+                s_m, s_s = divmod(s_r, 60)
+                s_ms = (s_s - int(s_s)) * 1000
+
+                e_h, e_r = divmod(e, 3600)
+                e_m, e_s = divmod(e_r, 60)
+                e_ms = (e_s - int(e_s)) * 1000
+
+                srt_output += f"{i+1}\n{int(s_h):02}:{int(s_m):02}:{int(s_s):02},{int(s_ms):03} --> {int(e_h):02}:{int(e_m):02}:{int(e_s):02},{int(e_ms):03}\n{txt}\n\n"
+            srt_text = srt_output
+            print(f"LyricsScroll: Aligned to {len(subs)} subtitle segments.")
+
+        # 4. Determine Duration
         if audio is not None:
             waveform = audio['waveform']
             sample_rate = audio['sample_rate']
+            print(f"LyricsScroll: Audio info - waveform.shape={waveform.shape}, sample_rate={sample_rate}")
             total_samples = waveform.shape[-1]
             duration = total_samples / sample_rate
+            # If audio waveform is empty but we have subs, use subs duration
+            if total_samples == 0 and subs:
+                print(f"LyricsScroll: Warning - Audio waveform is empty! Using subtitle duration instead.")
+                duration = subs[-1]['end'] + 2.0
         elif subs:
             # Fallback duration from subtitles if no audio
             duration = subs[-1]['end'] + 2.0 # Add padding
         else:
             duration = 10.0 # Should not happen
-            
+
         total_frames = int(duration * frame_rate)
         
         try:
@@ -587,7 +863,12 @@ class LyricsScroll:
 
             img_np = np.array(img).astype(np.float32) / 255.0
             output_images.append(torch.from_numpy(img_np))
-            
+
+        # Handle empty output_images case
+        if not output_images:
+            empty = torch.zeros((1, height, width, 4), dtype=torch.float32)
+            return (empty, srt_text)
+
         return (torch.stack(output_images), srt_text)
 
 NODE_CLASS_MAPPINGS = {
