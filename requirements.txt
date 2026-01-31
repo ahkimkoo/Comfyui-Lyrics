@@ -3,4 +3,3 @@ Pillow
 numpy
 torch
 torchaudio
-imageio[ffmpeg]

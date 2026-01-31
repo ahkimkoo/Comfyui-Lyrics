@@ -8,23 +8,9 @@ import math
 import gc
 import tempfile
 import random
+import subprocess
+import shutil
 from datetime import datetime
-
-# Try to import imageio for video writing
-try:
-    import imageio.v3 as iio
-
-    IMAGEIO_AVAILABLE = True
-except ImportError:
-    try:
-        import imageio
-
-        IMAGEIO_AVAILABLE = True
-    except ImportError:
-        IMAGEIO_AVAILABLE = False
-        print(
-            "Warning: imageio not found. Install it with: pip install imageio[ffmpeg]"
-        )
 
 # Attempt to import whisper
 try:
@@ -1127,8 +1113,8 @@ class LyricsScroll:
             del draw
             return img_np
 
-        # Direct video export to avoid memory issues
-        print(f"LyricsScroll: Generating video with {total_frames} frames...")
+        # PNG frames + FFmpeg for memory optimization
+        print(f"LyricsScroll: Generating {total_frames} frames...")
 
         # Generate output filename with date and random number
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1142,54 +1128,93 @@ class LyricsScroll:
         video_path = os.path.join(output_dir, output_filename)
         print(f"LyricsScroll: Output path: {video_path}")
 
-        if not IMAGEIO_AVAILABLE:
-            raise ImportError(
-                "imageio[ffmpeg] is required for video export. Install with: pip install imageio[ffmpeg]"
-            )
+        # Create temporary directory for PNG frames
+        frames_dir = tempfile.mkdtemp()
+        print(f"LyricsScroll: Temp directory for frames: {frames_dir}")
 
-        print(f"LyricsScroll: Using imageio for video export...")
-
-        # Process frames and write directly to video using imageio
+        # Step 1: Generate all PNG frames
+        print(f"LyricsScroll: Writing {total_frames} frames as PNG...")
         total_batches = (total_frames + batch_size - 1) // batch_size
 
-        # Open video writer with imageio (no plugin parameter - let it auto-detect)
-        with iio.imopen(
+        for batch_idx in range(total_batches):
+            start_frame = batch_idx * batch_size
+            end_frame = min(start_frame + batch_size, total_frames)
+
+            print(
+                f"LyricsScroll: Processing batch {batch_idx + 1}/{total_batches} (frames {start_frame}-{end_frame - 1})..."
+            )
+
+            # Process each frame in this batch
+            for f in range(start_frame, end_frame):
+                frame_np = generate_single_frame(f)
+
+                # Convert from RGBA (float32 [0,1]) to uint8 [0,255]
+                frame_uint8 = (frame_np * 255).astype(np.uint8)
+
+                # Save as PNG file
+                img = Image.fromarray(frame_uint8, mode="RGBA")
+                frame_path = os.path.join(frames_dir, f"frame_{f:06d}.png")
+                img.save(frame_path)
+
+                # Cleanup after each frame to minimize memory
+                del frame_np, frame_uint8, img
+
+            # Cleanup memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+
+            print(f"LyricsScroll: Batch {batch_idx + 1}/{total_batches} completed")
+
+        print(f"LyricsScroll: All PNG frames saved to {frames_dir}")
+
+        # Step 2: Merge PNG frames into WebM video using FFmpeg
+        pattern = os.path.join(frames_dir, "frame_%06d.png")
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",  # Overwrite output file
+            "-framerate",
+            str(frame_rate),
+            "-i",
+            pattern,
+            "-c:v",
+            "libvpx-vp9",
+            "-pix_fmt",
+            "yuva420p",
+            "-crf",
+            "23",
             video_path,
-            "w",
-            fps=frame_rate,
-            codec="vp9",
-            format="webm",
-            quality=8,
-        ) as writer:
-            print(f"LyricsScroll: Video writer opened for {total_frames} frames")
+        ]
 
-            for batch_idx in range(total_batches):
-                start_frame = batch_idx * batch_size
-                end_frame = min(start_frame + batch_size, total_frames)
+        print(f"LyricsScroll: Running FFmpeg to create video...")
+        print(f"LyricsScroll: Command: {' '.join(ffmpeg_cmd)}")
 
-                print(
-                    f"LyricsScroll: Processing batch {batch_idx + 1}/{total_batches} (frames {start_frame}-{end_frame - 1})..."
-                )
+        try:
+            result = subprocess.run(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+            )
+            print(f"LyricsScroll: FFmpeg completed successfully")
+        except subprocess.CalledProcessError as e:
+            print(f"LyricsScroll: FFmpeg failed with error:")
+            print(f"  STDOUT: {e.stdout}")
+            print(f"  STDERR: {e.stderr}")
+            # Don't delete temp frames on failure for debugging
+            print(f"LyricsScroll: Temp frames preserved at: {frames_dir}")
+            raise RuntimeError(
+                f"FFmpeg failed to create video. Check if ffmpeg is installed. "
+                f"Temp frames saved at: {frames_dir}"
+            ) from e
 
-                # Process each frame in this batch
-                for f in range(start_frame, end_frame):
-                    frame_np = generate_single_frame(f)
-
-                    # Convert from RGBA (float32 [0,1]) to uint8 [0,255]
-                    frame_uint8 = (frame_np * 255).astype(np.uint8)
-
-                    # Write frame to video
-                    writer.write(frame_uint8)
-
-                    # Cleanup after each frame to minimize memory
-                    del frame_np, frame_uint8
-
-                # Cleanup memory
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                gc.collect()
-
-                print(f"LyricsScroll: Batch {batch_idx + 1}/{total_batches} completed")
+        # Step 3: Clean up temporary PNG frames
+        try:
+            shutil.rmtree(frames_dir)
+            print(f"LyricsScroll: Cleaned temp directory {frames_dir}")
+        except Exception as e:
+            print(f"LyricsScroll: Warning - could not clean temp directory: {e}")
 
         print(f"LyricsScroll: Video saved to {video_path}")
 
