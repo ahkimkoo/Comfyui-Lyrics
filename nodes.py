@@ -1306,6 +1306,383 @@ class LyricsScroll:
         return (video_path, srt_text)
 
 
-NODE_CLASS_MAPPINGS = {"LyricsScroll": LyricsScroll}
+class VideoOverlay:
+    def __init__(self):
+        pass
 
-NODE_DISPLAY_NAME_MAPPINGS = {"LyricsScroll": "Lyrics Scroll Effect"}
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "video_path": ("STRING", {"default": ""}),
+                "bg_images": ("IMAGE",),
+                "scale_video_width": ("INT", {"default": 0, "min": 0, "max": 4096}),
+                "scale_video_height": ("INT", {"default": 0, "min": 0, "max": 4096}),
+                "pos_x": ("INT", {"default": 0, "min": -4096, "max": 4096}),
+                "pos_y": ("INT", {"default": 0, "min": -4096, "max": 4096}),
+                "skip": ("INT", {"default": 0, "min": 0, "max": 100000}),
+                "fps": (
+                    "FLOAT",
+                    {"default": 25.0, "min": 1.0, "max": 120.0, "step": 0.01},
+                ),
+            },
+            "optional": {
+                "audio": ("AUDIO",),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("video_path",)
+    FUNCTION = "overlay_video"
+    CATEGORY = "Lyrics"
+
+    def overlay_video(
+        self,
+        video_path,
+        bg_images,
+        scale_video_width,
+        scale_video_height,
+        pos_x,
+        pos_y,
+        skip,
+        fps,
+        audio=None,
+    ):
+        if not video_path or not os.path.exists(video_path):
+            raise ValueError(f"Foreground video not found: {video_path}")
+
+        # Get FFmpeg binary path
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        local_ffmpeg = os.path.join(script_dir, "bin", "ffmpeg")
+        local_ffprobe = os.path.join(script_dir, "bin", "ffprobe")
+
+        if os.path.exists(local_ffmpeg):
+            ffmpeg_binary = local_ffmpeg
+            print(f"VideoOverlay: Using project-local FFmpeg: {ffmpeg_binary}")
+        else:
+            ffmpeg_binary = "ffmpeg"
+            print("VideoOverlay: Using system FFmpeg")
+
+        if os.path.exists(local_ffprobe):
+            ffprobe_binary = local_ffprobe
+            print(f"VideoOverlay: Using project-local FFprobe: {ffprobe_binary}")
+        else:
+            ffprobe_binary = "ffprobe"
+            print("VideoOverlay: Using system FFprobe")
+
+        # Get background video info
+        bg_tensor = bg_images[0]  # (H, W, C)
+        bg_height, bg_width = bg_tensor.shape[:2]
+
+        # Create temporary directory for processing
+        temp_dir = tempfile.mkdtemp()
+        print(f"VideoOverlay: Using temp directory: {temp_dir}")
+
+        try:
+            # Step 1: Extract background frames from ComfyUI IMAGE tensor
+            bg_frames_dir = os.path.join(temp_dir, "bg_frames")
+            os.makedirs(bg_frames_dir, exist_ok=True)
+
+            print(f"VideoOverlay: Converting {len(bg_images)} background frames...")
+            for i, frame in enumerate(bg_images):
+                # Convert from torch tensor (0-1) to PIL Image
+                frame_np = (frame.numpy() * 255).astype(np.uint8)
+                img = Image.fromarray(frame_np, mode="RGB")
+                frame_path = os.path.join(bg_frames_dir, f"bg_frame_{i:06d}.png")
+                img.save(frame_path)
+            print("VideoOverlay: Background frames saved")
+
+            # Step 2: Create background video from frames
+            bg_video_path = os.path.join(temp_dir, "background.mp4")
+            bg_pattern = os.path.join(bg_frames_dir, "bg_frame_%06d.png")
+
+            bg_cmd = [
+                ffmpeg_binary,
+                "-y",
+                "-framerate",
+                str(fps),
+                "-i",
+                bg_pattern,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                bg_video_path,
+            ]
+
+            print("VideoOverlay: Creating background video...")
+            subprocess.run(
+                bg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
+            )
+            print(f"VideoOverlay: Background video created: {bg_video_path}")
+
+            # Step 3: Get foreground video info using ffprobe
+            fg_video_info = self._get_video_info(ffprobe_binary, video_path)
+            fg_fps = fg_video_info["fps"]
+            fg_duration = fg_video_info["duration"]
+            fg_frames = int(fg_duration * fg_fps)
+
+            # Step 4: Get background video duration
+            bg_video_info = self._get_video_info(ffprobe_binary, bg_video_path)
+            bg_duration = bg_video_info["duration"]
+            bg_frames = int(bg_duration * fps)
+
+            print(
+                f"VideoOverlay: Foreground: {fg_frames} frames @ {fg_fps}fps ({fg_duration:.2f}s)"
+            )
+            print(
+                f"VideoOverlay: Background: {bg_frames} frames @ {fps}fps ({bg_duration:.2f}s)"
+            )
+
+            # Step 5: Determine output duration (longest of both)
+            output_duration = max(fg_duration, bg_duration)
+
+            # Step 6: Calculate scaling parameters
+            scale_filter = ""
+            if scale_video_width > 0 and scale_video_height > 0:
+                # Both dimensions specified - scale to fit within bounds
+                scale_filter = f"scale=iw*min({scale_video_width}/iw\\,{scale_video_height}/ih):ih*min({scale_video_width}/iw\\,{scale_video_height}/ih)"
+            elif scale_video_width > 0:
+                # Scale by width
+                scale_filter = f"scale={scale_video_width}:-1"
+            elif scale_video_height > 0:
+                # Scale by height
+                scale_filter = f"scale=-1:{scale_video_height}"
+
+            # Step 7: Build ffmpeg overlay command
+            # Input 0: background video
+            # Input 1: foreground video
+
+            fg_input_cmd = ["-i", video_path]
+
+            # Video filter chain
+            # 1. Set frame rate for foreground to match output fps if needed
+            # 2. Skip frames if needed
+            # 3. Apply scaling
+            # 4. Apply overlay with position
+
+            # Handle frame rate conversion and skip for foreground
+            if abs(fg_fps - fps) > 0.01:
+                if skip > 0:
+                    # Skip frames and convert fps
+                    # Use trim filter to skip frames
+                    fg_filter = f"[1:v]select='gte(n\\,{skip})',fps={fps}[fg]"
+                else:
+                    fg_filter = f"[1:v]fps={fps}[fg]"
+            else:
+                if skip > 0:
+                    # Just skip frames, no fps conversion needed
+                    fg_filter = f"[1:v]select='gte(n\\,{skip})'[fg]"
+                else:
+                    fg_filter = "[1:v][fg]"
+
+            # Build complete filter
+            if scale_filter:
+                # Apply scaling then overlay
+                complete_filter = f"{fg_filter}[fg2];[fg2]{scale_filter}[fg_scaled];[0:v][fg_scaled]overlay={pos_x}:{pos_y}"
+            else:
+                # Just overlay
+                complete_filter = f"{fg_filter}[0:v][fg]overlay={pos_x}:{pos_y}"
+
+            # Generate output filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            random_suffix = random.randint(1000, 9999)
+            output_filename = f"overlay_{timestamp}_{random_suffix}.mp4"
+            output_dir = folder_paths.get_output_directory()
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, output_filename)
+
+            # Build final command
+            overlay_cmd = (
+                [
+                    ffmpeg_binary,
+                    "-y",
+                    "-stream_loop",
+                    "-1",  # Loop background indefinitely
+                    "-i",
+                    bg_video_path,
+                ]
+                + fg_input_cmd
+                + [
+                    "-filter_complex",
+                    complete_filter,
+                    "-t",
+                    str(output_duration),  # Use longest duration
+                ]
+            )
+
+            # Add audio handling
+            if audio is not None:
+                # Extract audio from ComfyUI audio tensor
+                audio_waveform = audio["waveform"]
+                audio_sample_rate = audio["sample_rate"]
+
+                # Save audio to temp file
+                audio_temp_path = os.path.join(temp_dir, "audio.wav")
+                self._save_audio(
+                    ffmpeg_binary, audio_waveform, audio_sample_rate, audio_temp_path
+                )
+
+                overlay_cmd.extend(
+                    [
+                        "-i",
+                        audio_temp_path,
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "fast",
+                        "-crf",
+                        "18",
+                        "-pix_fmt",
+                        "yuv420p",
+                        "-c:a",
+                        "aac",
+                        "-map",
+                        "0:v?",
+                        "-map",
+                        "1:v?",
+                        "-map",
+                        "2:a?",
+                        "-shortest",
+                        output_path,
+                    ]
+                )
+            else:
+                overlay_cmd.extend(
+                    [
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "fast",
+                        "-crf",
+                        "18",
+                        "-pix_fmt",
+                        "yuv420p",
+                        "-an",  # No audio if not provided
+                        output_path,
+                    ]
+                )
+
+            print("VideoOverlay: Running overlay command...")
+            print(f"Command: {' '.join(overlay_cmd)}")
+
+            subprocess.run(
+                overlay_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+            )
+
+            print("VideoOverlay: Overlay completed successfully")
+            print(f"VideoOverlay: Output saved to: {output_path}")
+
+            return (output_path,)
+
+        except subprocess.CalledProcessError as e:
+            print(f"VideoOverlay: FFmpeg failed with error:")
+            print(f"  STDOUT: {e.stdout}")
+            print(f"  STDERR: {e.stderr}")
+            raise RuntimeError(f"FFmpeg overlay failed: {e.stderr}") from e
+        finally:
+            # Cleanup
+            try:
+                shutil.rmtree(temp_dir)
+                print("VideoOverlay: Cleaned temp directory")
+            except Exception as e:
+                print(f"VideoOverlay: Warning - could not clean temp directory: {e}")
+
+    def _get_video_info(self, ffprobe_binary, video_path):
+        """Get video information using ffprobe"""
+        cmd = [
+            ffprobe_binary,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height,r_frame_rate",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            video_path,
+        ]
+
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"ffprobe failed for {video_path}: {result.stderr}")
+
+        lines = result.stdout.strip().split("\n")
+        # First line: width,height,r_frame_rate
+        parts = lines[0].split(",")
+        # Second line: duration
+        duration = float(lines[1]) if len(lines) > 1 else 0.0
+
+        # Parse fps from "num/den" format
+        fps_str = parts[2].strip()
+        if "/" in fps_str:
+            num, den = fps_str.split("/")
+            fps = float(num) / float(den)
+        else:
+            fps = float(fps_str)
+
+        return {
+            "width": int(parts[0]),
+            "height": int(parts[1]),
+            "fps": fps,
+            "duration": duration,
+        }
+
+    def _save_audio(self, ffmpeg_binary, waveform, sample_rate, output_path):
+        """Save audio tensor to WAV file using FFmpeg"""
+        # Convert torch tensor to numpy
+        if waveform.dim() == 3:
+            waveform = waveform[0]  # Remove batch dimension
+        if waveform.dim() == 2:
+            # Convert to mono if stereo
+            waveform = torch.mean(waveform, dim=0)
+
+        audio_np = waveform.numpy()
+
+        # Save using scipy if available, otherwise use ffmpeg to pipe raw audio
+        try:
+            import scipy.io.wavfile
+
+            scipy.io.wavfile.write(output_path, sample_rate, audio_np)
+        except ImportError:
+            # Fallback: use ffmpeg to pipe raw audio
+            cmd = [
+                ffmpeg_binary,
+                "-y",
+                "-f",
+                "f32le",
+                "-ar",
+                str(sample_rate),
+                "-ac",
+                "1",
+                "-i",
+                "-",
+                output_path,
+            ]
+            subprocess.run(
+                cmd,
+                input=audio_np.tobytes(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+
+
+NODE_CLASS_MAPPINGS = {"LyricsScroll": LyricsScroll, "VideoOverlay": VideoOverlay}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "LyricsScroll": "Lyrics Scroll Effect",
+    "VideoOverlay": "Video Overlay",
+}
