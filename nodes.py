@@ -1196,12 +1196,32 @@ class LyricsScroll:
             )
             # Get pixel at (0,0) to verify transparency
             pixel = test_img.getpixel((0, 0))
-            print(f"LyricsScroll: Pixel (0,0): {pixel}")
+            print(
+                f"LyricsScroll: Pixel (0,0): R={pixel[0]} G={pixel[1]} B={pixel[2]} A={pixel[3]}"
+            )
+            if pixel[3] == 0:
+                print("LyricsScroll: ✓ PNG has transparent alpha channel (A=0)")
+            else:
+                print(f"LyricsScroll: ✗ PNG alpha is not zero (A={pixel[3]})")
 
         # Step 2: Merge PNG frames into MOV video with ProRes codec (full alpha support)
         pattern = os.path.join(frames_dir, "frame_%06d.png")
+
+        # Check if project-local FFmpeg 8 exists
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        local_ffmpeg = os.path.join(script_dir, "bin", "ffmpeg")
+
+        if os.path.exists(local_ffmpeg):
+            print(f"LyricsScroll: Using project-local FFmpeg: {local_ffmpeg}")
+            ffmpeg_binary = local_ffmpeg
+        else:
+            print(
+                "LyricsScroll: Using system FFmpeg (Note: FFmpeg 8+ recommended for alpha support)"
+            )
+            ffmpeg_binary = "ffmpeg"
+
         ffmpeg_cmd = [
-            "ffmpeg",
+            ffmpeg_binary,
             "-y",  # Overwrite output file
             "-framerate",
             str(frame_rate),
@@ -1230,6 +1250,39 @@ class LyricsScroll:
                 check=True,
             )
             print(f"LyricsScroll: FFmpeg completed successfully")
+
+            # Verify output video pixel format with ffprobe
+            try:
+                ffprobe_cmd = [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=pix_fmt",
+                    "-of",
+                    "csv=p=0",
+                    video_path,
+                ]
+                ffprobe_result = subprocess.run(
+                    ffprobe_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                if ffprobe_result.returncode == 0:
+                    pix_fmt = ffprobe_result.stdout.strip()
+                    print(f"LyricsScroll: Output video pixel format: {pix_fmt}")
+                    if "yuva444p10le" in pix_fmt:
+                        print("LyricsScroll: ✓ Video has alpha channel (yuva444p10le)")
+                    else:
+                        print(f"LyricsScroll: ✗ Video alpha channel missing: {pix_fmt}")
+            except:
+                print(
+                    "LyricsScroll: Warning - ffprobe not available to verify pixel format"
+                )
+
         except subprocess.CalledProcessError as e:
             print(f"LyricsScroll: FFmpeg failed with error:")
             print(f"  STDOUT: {e.stdout}")
