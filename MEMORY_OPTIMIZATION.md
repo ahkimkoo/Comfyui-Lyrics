@@ -52,17 +52,22 @@
 ### 输出变化
 - **返回类型**: `("STRING", "STRING")`
 - **返回值**: `(video_path, subtitles)`
-  - `video_path`: 生成的WebM视频文件路径
+  - `video_path`: 生成的MOV视频文件路径
   - `subtitles`: SRT格式字幕文本
 
 ### 输出文件格式
-- **格式**: WebM (.webm)
-- **编解码器**: VP9 (支持alpha透明通道）
+- **格式**: MOV (.mov)
+- **编解码器**: ProRes 4444 (完全支持alpha透明通道）
 - **透明度**: RGBA alpha通道完整保留
 - **帧率**: 对应frame_rate参数
 - **背景**: 透明（alpha=0）
-- **文件命名**: `lyrics_YYYYMMDD_HHMMSS_XXXX.webm`
+- **文件命名**: `lyrics_YYYYMMDD_HHMMSS_XXXX.mov`
 - **输出目录**: ComfyUI的outputs目录
+
+**为什么选择MOV而非WebM：**
+- WebM VP9的alpha支持在某些情况下不稳定
+- MOV + ProRes 4444是行业标准，透明度支持完美
+- ProRes编码质量高，适合后期编辑
 
 ### 新增参数
 - **batch_size**: 每批处理的帧数（默认: 250，范围: 10-2000）
@@ -82,10 +87,10 @@
 | 处理期间内存 | ~88GB | **~500MB** | **99.4%** |
 | GPU内存占用 | 高（累积） | 低（及时清理） | **80%** |
 | 最大可处理时长 | ~1分钟 | **无限制** | **大幅提升** |
-| 输出格式 | Tensor（需转换） | WebM视频（直接可用） | 用户体验++ |
+ | 输出格式 | Tensor（需转换） | MOV视频（直接可用） | 用户体验++ |
 
 ### 视频文件大小
-4分钟WebM视频（VP9编码）
+4分钟MOV视频（ProRes 4444编码）
 - **文件大小**: 约 **200-500MB**（取决于内容复杂度）
 - 对比未压缩帧: 从88GB减少约**99.5%**
 
@@ -118,9 +123,10 @@ ffmpeg_cmd = [
     '-y',
     '-framerate', str(frame_rate),
     '-i', os.path.join(frames_dir, 'frame_%06d.png'),
-    '-c:v', 'libvpx-vp9',
-    '-pix_fmt', 'yuva420p',
-    '-crf', '23',
+    '-c:v', 'prores_ks',  # ProRes 4444 with full alpha support
+    '-profile:v', '3',  # ProRes 4444 (12-bit RGB + Alpha)
+    '-pix_fmt', 'argb',  # ARGB format (alpha in first channel)
+    '-qscale:v', '5',  # Quality (1-22, 5 = high quality)
     video_path
 ]
 subprocess.run(ffmpeg_cmd, check=True)
@@ -131,11 +137,12 @@ shutil.rmtree(frames_dir)
 
 ### 透明度处理
 
-WebM格式使用VP9编码器，完整支持RGBA：
+MOV格式使用ProRes 4444编码器，完整支持RGBA：
 - **R/G/B**: 颜色通道
 - **A**: Alpha透明通道（0=透明，255=不透明）
 - 背景: `Image.new('RGBA', (width, height), (0, 0, 0, 0))` 完全透明
-- FFmpeg参数: `-pix_fmt yuva420p` (yuva420p包含alpha通道)
+- FFmpeg参数: `-profile:v 3 -pix_fmt argb` (ProRes 4444完整支持alpha)
+- **优势**: ProRes 4444是行业标准，透明度支持稳定可靠
 
 ### 内存管理策略
 
@@ -190,15 +197,16 @@ ffmpeg -version
 
 ### 问题：生成的视频文件很大
 **解决**:
-- 调整crf参数（代码中`crf=23`）
-  - crf范围: 0-63（值越小质量越高文件越大）
-  - 推荐: 18-31（默认23）
-  - 示例：修改代码中`'-crf', '18'`提高质量
+- 调整qscale参数（代码中`qscale:v=5`）
+  - qscale范围: 1-22（值越小质量越高文件越大）
+  - 推荐: 4-7（默认5）
+  - 示例：修改代码中`'-qscale:v', '4'`提高质量
 
 ### 问题：透明度不生效
 **解决**:
-- 确认使用`-pix_fmt yuva420p`（包含a表示alpha）
-- 播放时测试透明度（现代浏览器应支持）
+- ProRes 4444天然支持alpha，无需特殊配置
+- 使用QuickTime、VLC等播放器测试透明度
+- 现代浏览器直接支持MOV+ProRes
 
 ### 问题：处理速度慢
 **解决**:
@@ -219,11 +227,11 @@ ffmpeg -version
 1. **生成PNG帧序列** - 直接保存到临时目录，单帧内存占用
 2. **自动执行FFmpeg** - 用户无感知，Python代码自动调用
 3. **清理临时PNG文件** - 成功后自动删除
-4. **透明度支持** - VP9 + yuva420p完整支持
+4. **透明度支持** - ProRes 4444 + ARGB完整支持
 
 **核心优势**：
 - 代码简洁：不需要复杂的imageio API调用
-- 可靠：直接用FFmpeg，兼容性更好
+- 可靠：ProRes 4444是行业标准，透明度支持完美
 - 内存安全：仅单帧内存，无累积风险
 - 用户体验++：自动处理，无需手动操作
 - 可扩展：用户可调整FFmpeg参数（质量、编码器等）

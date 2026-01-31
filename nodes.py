@@ -1119,7 +1119,7 @@ class LyricsScroll:
         # Generate output filename with date and random number
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         random_suffix = random.randint(1000, 9999)
-        output_filename = f"lyrics_{timestamp}_{random_suffix}.webm"
+        output_filename = f"lyrics_{timestamp}_{random_suffix}.mov"
 
         # Ensure output directory exists
         output_dir = folder_paths.get_output_directory()
@@ -1129,7 +1129,26 @@ class LyricsScroll:
         print(f"LyricsScroll: Output path: {video_path}")
 
         # Create temporary directory for PNG frames
-        frames_dir = tempfile.mkdtemp()
+        # Try to use RAM disk (/dev/shm on Linux) for fastest I/O
+        # Falls back to /tmp or system default if RAM disk not available
+        temp_dir = None
+        if os.path.exists("/dev/shm"):
+            # Check available RAM disk space (at least 5GB needed for 2563 frames)
+            try:
+                stat = os.statvfs("/dev/shm")
+                available_gb = stat.f_bavail * stat.f_frsize / (1024**3)
+                if available_gb > 5:
+                    temp_dir = "/dev/shm"
+                    print(
+                        f"LyricsScroll: Using RAM disk /dev/shm ({available_gb:.1f}GB available)"
+                    )
+            except:
+                pass
+
+        if temp_dir is None:
+            temp_dir = "/tmp" if os.path.exists("/tmp") else None
+
+        frames_dir = tempfile.mkdtemp(dir=temp_dir)
         print(f"LyricsScroll: Temp directory for frames: {frames_dir}")
 
         # Step 1: Generate all PNG frames
@@ -1168,7 +1187,18 @@ class LyricsScroll:
 
         print(f"LyricsScroll: All PNG frames saved to {frames_dir}")
 
-        # Step 2: Merge PNG frames into WebM video using FFmpeg
+        # Debug: Check first PNG has transparency
+        first_frame = os.path.join(frames_dir, "frame_000000.png")
+        if os.path.exists(first_frame):
+            test_img = Image.open(first_frame)
+            print(
+                f"LyricsScroll: First PNG info - Mode: {test_img.mode}, Size: {test_img.size}"
+            )
+            # Get pixel at (0,0) to verify transparency
+            pixel = test_img.getpixel((0, 0))
+            print(f"LyricsScroll: Pixel (0,0): {pixel}")
+
+        # Step 2: Merge PNG frames into MOV video with ProRes codec (full alpha support)
         pattern = os.path.join(frames_dir, "frame_%06d.png")
         ffmpeg_cmd = [
             "ffmpeg",
@@ -1178,11 +1208,13 @@ class LyricsScroll:
             "-i",
             pattern,
             "-c:v",
-            "libvpx-vp9",
+            "prores_ks",  # ProRes 4444 with full alpha support
+            "-profile:v",
+            "3",  # ProRes 4444 (12-bit RGB + Alpha)
             "-pix_fmt",
-            "yuva420p",
-            "-crf",
-            "23",
+            "argb",  # ARGB format (alpha in first channel)
+            "-qscale:v",
+            "5",  # Quality (1-22, 5 = high quality)
             video_path,
         ]
 
