@@ -1210,9 +1210,9 @@ class LyricsScroll:
             "-c:v",
             "prores_ks",  # ProRes 4444 with full alpha support
             "-profile:v",
-            "3",  # ProRes 4444 (12-bit RGB + Alpha)
+            "4",  # ProRes 4444 (唯一支持alpha的profile)
             "-pix_fmt",
-            "argb",  # ARGB format (alpha in first channel)
+            "yuva444p10le",  # YUV 4:4:4 with Alpha (标准格式)
             "-qscale:v",
             "5",  # Quality (1-22, 5 = high quality)
             video_path,

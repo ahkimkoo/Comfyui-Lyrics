@@ -124,8 +124,8 @@ ffmpeg_cmd = [
     '-framerate', str(frame_rate),
     '-i', os.path.join(frames_dir, 'frame_%06d.png'),
     '-c:v', 'prores_ks',  # ProRes 4444 with full alpha support
-    '-profile:v', '3',  # ProRes 4444 (12-bit RGB + Alpha)
-    '-pix_fmt', 'argb',  # ARGB format (alpha in first channel)
+    '-profile:v', '4',  # ProRes 4444 (唯一支持alpha的profile)
+    '-pix_fmt', 'yuva444p10le',  # YUV 4:4:4 with Alpha (标准格式)
     '-qscale:v', '5',  # Quality (1-22, 5 = high quality)
     video_path
 ]
@@ -141,7 +141,7 @@ MOV格式使用ProRes 4444编码器，完整支持RGBA：
 - **R/G/B**: 颜色通道
 - **A**: Alpha透明通道（0=透明，255=不透明）
 - 背景: `Image.new('RGBA', (width, height), (0, 0, 0, 0))` 完全透明
-- FFmpeg参数: `-profile:v 3 -pix_fmt argb` (ProRes 4444完整支持alpha)
+- FFmpeg参数: `-profile:v 4 -pix_fmt yuva444p10le` (ProRes 4444完整支持alpha)
 - **优势**: ProRes 4444是行业标准，透明度支持稳定可靠
 
 ### 内存管理策略
@@ -204,9 +204,16 @@ ffmpeg -version
 
 ### 问题：透明度不生效
 **解决**:
-- ProRes 4444天然支持alpha，无需特殊配置
-- 使用QuickTime、VLC等播放器测试透明度
-- 现代浏览器直接支持MOV+ProRes
+- 确认FFmpeg命令使用`-profile:v 4 -pix_fmt yuva444p10le`（profile 4是唯一支持alpha的）
+- 使用专业视频编辑器验证：Premiere、After Effects、DaVinci Resolve、CapCut
+- 标准播放器（QuickTime、VLC）显示透明背景
+
+**验证方法**:
+```bash
+# 检查输出视频的像素格式
+ffprobe output.mov | grep yuva444p10le
+# 应该显示 Stream #0: Video: prores (yuva444p10le, ...)
+```
 
 ### 问题：处理速度慢
 **解决**:
