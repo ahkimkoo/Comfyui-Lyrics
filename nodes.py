@@ -1147,19 +1147,19 @@ class LyricsScroll:
                 "imageio[ffmpeg] is required for video export. Install with: pip install imageio[ffmpeg]"
             )
 
-        print(f"LyricsScroll: Using imageio-ffmpeg for video export...")
+        print(f"LyricsScroll: Using imageio for video export...")
 
         # Process frames and write directly to video using imageio
         total_batches = (total_frames + batch_size - 1) // batch_size
 
-        # Open video writer with imageio
+        # Open video writer with imageio (no plugin parameter - let it auto-detect)
         with iio.imopen(
             video_path,
             "w",
             fps=frame_rate,
             codec="vp9",
-            plugin="ffmpeg",
-            output_params={"pix_fmt": "yuva420p"},
+            format="webm",
+            quality=8,
         ) as writer:
             print(f"LyricsScroll: Video writer opened for {total_frames} frames")
 
