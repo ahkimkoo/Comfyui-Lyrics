@@ -3,3 +3,4 @@ Pillow
 numpy
 torch
 torchaudio
+opencv-python

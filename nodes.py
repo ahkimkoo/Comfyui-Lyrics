@@ -6,6 +6,20 @@ import os
 import re
 import math
 import gc
+import tempfile
+import random
+from datetime import datetime
+
+# Try to import opencv for video writing
+try:
+    import cv2
+
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    print(
+        "Warning: opencv-python not found. Install it with: pip install opencv-python"
+    )
 
 # Attempt to import whisper
 try:
@@ -100,8 +114,8 @@ class LyricsScroll:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("images", "subtitles")
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("video_path", "subtitles")
     FUNCTION = "generate_lyrics"
     CATEGORY = "Lyrics"
 
@@ -1106,293 +1120,87 @@ class LyricsScroll:
             img_np = np.array(img).astype(np.float32) / 255.0
             del img
             del draw
-            return torch.from_numpy(img_np)
+            return img_np
 
-        # Process frames in batches to reduce memory usage
-        output_images = []
+        # Direct video export to avoid memory issues
+        print(f"LyricsScroll: Generating video with {total_frames} frames...")
+
+        # Generate output filename with date and random number
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        random_suffix = random.randint(1000, 9999)
+        output_filename = f"lyrics_{timestamp}_{random_suffix}.webm"
+
+        # Ensure output directory exists
+        output_dir = folder_paths.get_output_directory()
+        os.makedirs(output_dir, exist_ok=True)
+
+        video_path = os.path.join(output_dir, output_filename)
+        print(f"LyricsScroll: Output path: {video_path}")
+
+        if not CV2_AVAILABLE:
+            raise ImportError(
+                "opencv-python is required for video export. Install with: pip install opencv-python"
+            )
+
+        # Initialize video writer with VP8 codec for WebM with alpha support
+        # Note: VP8/VP9 supports alpha channel in WebM
+        fourcc = cv2.VideoWriter_fourcc(*"VP80")
+        video_writer = cv2.VideoWriter(video_path, fourcc, frame_rate, (width, height))
+
+        if not video_writer.isOpened():
+            # Fallback to uncompressed if VP8 not available
+            print("LyricsScroll: VP80 codec not available, trying uncompressed...")
+            fourcc = 0  # Uncompressed
+            video_writer = cv2.VideoWriter(
+                video_path, fourcc, frame_rate, (width, height)
+            )
+
+        # Process frames and write directly to video
         total_batches = (total_frames + batch_size - 1) // batch_size
 
         for batch_idx in range(total_batches):
             start_frame = batch_idx * batch_size
             end_frame = min(start_frame + batch_size, total_frames)
-            batch_frames = end_frame - start_frame
 
             print(
                 f"LyricsScroll: Processing batch {batch_idx + 1}/{total_batches} (frames {start_frame}-{end_frame - 1})..."
             )
 
-            batch_tensors = []
+            # Process each frame in this batch
             for f in range(start_frame, end_frame):
-                frame_tensor = generate_single_frame(f)
-                batch_tensors.append(frame_tensor)
+                frame_np = generate_single_frame(f)
 
-            # Stack batch tensors
-            batch_output = torch.stack(batch_tensors)
-            output_images.append(batch_output)
+                # Convert from RGBA (float32 [0,1]) to BGR + alpha for video
+                # OpenCV expects BGR for color images
+                frame_bgr = (frame_np[:, :, :3] * 255).astype(np.uint8)
+                # Swap RGB to BGR
+                frame_bgr = cv2.cvtColor(frame_bgr, cv2.COLOR_RGB2BGR)
+                # Add alpha channel
+                alpha = (frame_np[:, :, 3] * 255).astype(np.uint8)
 
-            # Clear batch tensors to free memory
-            del batch_tensors
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-
-            print(f"LyricsScroll: Batch {batch_idx + 1} completed, memory freed")
-
-        # Concatenate all batches
-        if output_images:
-            final_output = torch.cat(output_images, dim=0)
-            # Clear intermediate batch outputs
-            del output_images
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-        else:
-            final_output = torch.zeros((1, height, width, 4), dtype=torch.float32)
-            current_time = f / frame_rate
-
-            # 1. Identify the "Next" line to determine phase
-            # next_idx is the first subtitle that hasn't started yet (start > current_time)
-            next_idx = len(subs)
-            for i, sub in enumerate(subs):
-                if sub["start"] > current_time:
-                    next_idx = i
-                    break
-
-            # current settled state is next_idx - 1
-            # e.g. if next is 0 (first one hasn't started), state is -1 (pre-start)
-            # if next is 1 (0 has started, 1 hasn't), state is 0.
-
-            current_state_idx = next_idx - 1
-
-            # 2. Check for transition to next_idx
-            # Transition happens in [next_start - 0.3, next_start]
-
-            layout_current = {}
-
-            # Ease Out Cubic
-            def ease_out_cubic(t):
-                return 1 - math.pow(1 - t, 3)
-
-            is_transitioning = False
-
-            if next_idx < len(subs):
-                next_start = subs[next_idx]["start"]
-                anim_start = next_start - ANIMATION_DURATION
-
-                if current_time >= anim_start:
-                    # Transitioning from current_state_idx -> next_idx
-                    is_transitioning = True
-                    raw_t = (current_time - anim_start) / ANIMATION_DURATION
-                    raw_t = max(0.0, min(1.0, raw_t))
-                    t = ease_out_cubic(raw_t)
-
-                    # Interpolate Layout(current_state_idx) -> Layout(next_idx)
-                    layout_prev = calculate_layout(current_state_idx, True)
-                    layout_next = calculate_layout(next_idx, True)
-
-                    # Target index for triangle logic is the incoming one
-                    target_idx = next_idx
-
-                    all_keys = set(layout_prev.keys()) | set(layout_next.keys())
-                    for k in all_keys:
-                        # Defaults for entering/leaving items
-                        # If k not in prev (Entering): It comes from Bottom (Slot 3 + Gap) or generic down
-                        # If k not in next (Leaving): It goes to Top (Slot 1 - Gap) or generic up
-
-                        # Better default calculation?
-                        # Use y_pos +/- height as safe far-field
-                        p1 = layout_prev.get(
-                            k, {"y": y_pos + height / 2, "size": font_size, "alpha": 0}
-                        )
-                        p2 = layout_next.get(
-                            k, {"y": y_pos - height / 2, "size": font_size, "alpha": 0}
-                        )
-
-                        curr_y = p1["y"] + (p2["y"] - p1["y"]) * t
-                        curr_size = p1["size"] + (p2["size"] - p1["size"]) * t
-                        curr_alpha = p1["alpha"] + (p2["alpha"] - p1["alpha"]) * t
-
-                        layout_current[k] = {
-                            "y": curr_y,
-                            "size": curr_size,
-                            "alpha": curr_alpha,
-                        }
-
-            if not is_transitioning:
-                # Settled at current_state_idx
-                layout_current = calculate_layout(current_state_idx, True)
-                target_idx = current_state_idx
-                t = 1.0
-
-            # Render
-            img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(img)
-
-            # Sort by index to draw in order
-            sorted_indices = sorted(layout_current.keys())
-
-            for i in sorted_indices:
-                props = layout_current[i]
-                if props["alpha"] < 1:
-                    continue
-
-                this_font = self.get_font(font_filename, int(props["size"]))
-
-                # Colors
-                alpha_int = int(props["alpha"])
-                this_text_color = text_color_rgb + (alpha_int,)
-                this_stroke_color = stroke_color_rgb + (alpha_int,)
-
-                # Shadow Color with combined alpha
-                # Shadow base alpha * Text Fade alpha
-                this_shadow_alpha = int(255 * shadow_alpha * (alpha_int / 255.0))
-                this_shadow_color = shadow_color_rgb + (this_shadow_alpha,)
-
-                # Text Wrapping
-                lines, _, _ = self.wrap_text(
-                    subs[i]["text"], this_font, MAX_TEXT_WIDTH, letter_spacing, line_gap
+                # Create BGRA frame
+                frame_bgra = cv2.merge(
+                    [frame_bgr[:, :, 0], frame_bgr[:, :, 1], frame_bgr[:, :, 2], alpha]
                 )
 
-                # Draw Triangle (Only for Active Target)
-                # User: "到了二行后自动在行首插入三角符号"
-                # "到了二行" means t=1.0 or settled state for target_idx.
-                # During transition? "在移动的过程中下一行字幕会出现在三行".
-                # Triangle should probably appear when it is THE active line.
-                # If we are transitioning TO N, N has triangle?
-                # Let's fade in triangle with t?
-                # Or only show if i == target_idx?
+                # Write frame to video
+                video_writer.write(frame_bgra)
 
-                # Triangle Logic:
-                # Always show on the current "Active Intent" line.
-                # If transitioning N-1 -> N. N is the goal.
-                # If t < 0.5, maybe focus is still N-1 visually?
-                # But requirement says "Moving to second line... insert triangle".
-                # Implies triangle appears when it settles?
-                # Let's fade it in based on 't' if i == target_idx.
-                # If i == target_idx - 1 (Old focus), fade out triangle.
+                # Cleanup after each frame to minimize memory
+                del frame_np, frame_bgr, frame_bgra, alpha
 
-                tri_alpha = 0
-                if i == target_idx:
-                    # Incoming focus
-                    # If settled, 255. If transitioning, 0->255.
-                    if t < 1.0:  # Transitioning
-                        tri_alpha = int(255 * t)
-                    else:
-                        tri_alpha = 255
-                elif target_idx > 0 and i == target_idx - 1:
-                    # Outgoing focus
-                    # If transitioning, 255 -> 0
-                    if t < 1.0:
-                        tri_alpha = int(255 * (1 - t))
-
-                # Draw Triangle
-                if tri_alpha > 10:
-                    t_size = max(10, int(props["size"] * 0.5))
-                    tri_x = margin_left
-                    # Center Y relative to first line of text?
-                    # Text Y is top-left.
-                    # Calculate single line height for centering triangle on first line
-                    ascent, descent = this_font.getmetrics()
-                    first_line_h = ascent + descent
-                    tri_y = props["y"] + first_line_h / 2
-
-                    p1 = (tri_x + t_size, tri_y)
-                    p2 = (tri_x, tri_y - t_size * 0.6)
-                    p3 = (tri_x, tri_y + t_size * 0.6)
-
-                    tri_fill = text_color_rgb + (tri_alpha,)
-                    tri_stroke = stroke_color_rgb + (tri_alpha,)
-
-                    # Fix: Only pass outline if stroke_width > 0
-                    if stroke_width > 0:
-                        draw.polygon([p1, p2, p3], fill=tri_fill, outline=tri_stroke)
-                    else:
-                        draw.polygon([p1, p2, p3], fill=tri_fill, outline=None)
-
-                # Draw Text
-                # Indent if triangle is present?
-                # User said: "Triangle inserted at head".
-                # Previous agreed style: Inactive (No Indent), Active (Indent).
-                # Transition?
-                # If Triangle fades in/out, Text should slide?
-                # If Text slides, use t.
-
-                base_x = margin_left
-                if i == target_idx or (target_idx > 0 and i == target_idx - 1):
-                    # It's an active-ish line.
-                    # Calculate indent based on tri_alpha logic implicitly
-                    # Max indent = t_size + 10
-                    max_indent = max(10, int(props["size"] * 0.5)) + 10
-
-                    if i == target_idx:  # Incoming
-                        current_indent = max_indent * t if t < 1.0 else max_indent
-                    else:  # Outgoing
-                        current_indent = max_indent * (1 - t) if t < 1.0 else 0
-
-                    base_x += current_indent
-
-                self.draw_multiline_text(
-                    draw,
-                    base_x,
-                    props["y"],
-                    lines,
-                    this_font,
-                    this_text_color,
-                    stroke_width,
-                    this_stroke_color,
-                    this_shadow_color,
-                    (shadow_offset_x, shadow_offset_y),
-                    letter_spacing,
-                    line_gap,
-                )
-
-            img_np = np.array(img).astype(np.float32) / 255.0
-            del img
-            del draw
-            return torch.from_numpy(img_np)
-
-        # Process frames in batches to reduce memory usage
-        output_images = []
-        total_batches = (total_frames + batch_size - 1) // batch_size
-
-        for batch_idx in range(total_batches):
-            start_frame = batch_idx * batch_size
-            end_frame = min(start_frame + batch_size, total_frames)
-            batch_frames = end_frame - start_frame
-
-            print(
-                f"LyricsScroll: Processing batch {batch_idx + 1}/{total_batches} (frames {start_frame}-{end_frame - 1})..."
-            )
-
-            batch_tensors = []
-            for f in range(start_frame, end_frame):
-                frame_tensor = generate_single_frame(f)
-                batch_tensors.append(frame_tensor)
-
-            # Stack batch tensors
-            batch_output = torch.stack(batch_tensors)
-            output_images.append(batch_output)
-
-            # Clear batch tensors to free memory
-            del batch_tensors
+            # Cleanup memory
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             gc.collect()
 
-            print(f"LyricsScroll: Batch {batch_idx + 1} completed, memory freed")
+            print(f"LyricsScroll: Batch {batch_idx + 1}/{total_batches} completed")
 
-        # Concatenate all batches
-        if output_images:
-            final_output = torch.cat(output_images, dim=0)
-            # Clear intermediate batch outputs
-            del output_images
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-        else:
-            final_output = torch.zeros((1, height, width, 4), dtype=torch.float32)
+        # Release video writer
+        video_writer.release()
+        print(f"LyricsScroll: Video saved to {video_path}")
 
-        return (final_output, srt_text)
+        return (video_path, srt_text)
 
 
 NODE_CLASS_MAPPINGS = {"LyricsScroll": LyricsScroll}
