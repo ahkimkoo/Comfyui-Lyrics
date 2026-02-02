@@ -310,15 +310,14 @@ class LyricsScroll:
 
     def align_text_to_timeline(self, timeline_subs, reference_text, max_chars=20):
         """
-        Align reference text to Whisper timeline using fuzzy matching.
+        Align reference text to Whisper timeline using semantic unit distribution (方案A - 完全修复).
 
-        Uses Whisper's detected timing segments and matches them to the
-        reference text using sliding window similarity matching. This handles
-        cases where Whisper misrecognizes words (extra/missing/wrong characters).
-
-        Ignores:
-        - Whitespace (spaces, newlines, tabs)
-        - Bracket tags like [Chorus], [Verse], [Intro bass, guitar], etc.
+        Strategy:
+        1. Split reference text into complete semantic units by punctuation
+        2. Distribute these units evenly across timeline segments
+        3. Each time segment gets complete sentences/phrases
+        4. If a unit is too long (> max_chars), split it by max_chars
+        5. Merge very short (< 3 chars) subtitles with adjacent ones
 
         Args:
             timeline_subs: List of {'start', 'end', 'text'} from Whisper
@@ -328,171 +327,178 @@ class LyricsScroll:
         Returns:
             List of {'start', 'end', 'text'} with aligned reference text
         """
-        from difflib import SequenceMatcher
         import re
 
         ref_text = reference_text.strip()
         if not ref_text:
             return timeline_subs
 
-        # Remove bracket tags (e.g., [Chorus], [Verse 1], [Intro bass, guitar])
-        # Pattern matches [...] and removes it
+        # Step 1: Remove bracket tags
         ref_text_no_tags = re.sub(r"\[[^\]]*\]", "", ref_text)
 
-        # Remove all whitespace from reference for better matching
-        ref_clean = (
-            ref_text_no_tags.replace(" ", "")
-            .replace("\n", "")
-            .replace("\t", "")
-            .replace("\r", "")
-        )
-        ref_len = len(ref_clean)
+        # Step 2: Normalize whitespace to single spaces
+        ref_clean = ref_text_no_tags.replace("\n", " ").replace("\t", " ")
+        ref_clean = re.sub(r"\s+", " ", ref_clean).strip()
 
-        # Build position mapping: clean_index -> original_index in ref_text_no_tags
-        clean_to_orig_no_tags = []
-        orig_idx = 0
-        for char in ref_text_no_tags:
-            if not char.isspace():
-                clean_to_orig_no_tags.append(orig_idx)
-            orig_idx += 1
+        if not timeline_subs:
+            return []
 
-        # Pre-extract timing from Whisper segments
-        segments = []
-        for sub in timeline_subs:
-            clean_text = sub["text"].replace(" ", "").replace("\n", "")
-            if clean_text:
-                segments.append(
+        # Step 3: Split reference text into semantic units
+        # Split by Chinese punctuation to preserve sentence boundaries
+        # Pattern: ，。！？、；： keeps the delimiter with the preceding text
+        semantic_chunks = re.split(r"([，。！？、；：])", ref_clean)
+
+        # Re-attach punctuation to create complete semantic units
+        # This ensures each unit ends with punctuation (complete thought)
+        semantic_units = []
+        i = 0
+        while i < len(semantic_chunks):
+            if (
+                i + 1 < len(semantic_chunks)
+                and semantic_chunks[i + 1] in "，。！？、；："
+            ):
+                # Combine text with its following punctuation
+                combined = (semantic_chunks[i] + semantic_chunks[i + 1]).strip()
+                if combined:
+                    semantic_units.append(combined)
+                i += 2
+            else:
+                # Regular text segment (no following punctuation)
+                if semantic_chunks[i].strip():
+                    semantic_units.append(semantic_chunks[i].strip())
+                i += 1
+
+        # Step 4: Distribute semantic units across timeline
+        num_timeline_segments = len(timeline_subs)
+        num_units = len(semantic_units)
+
+        # Calculate how many units each time segment should get
+        units_per_segment = []
+        unit_idx = 0
+        for seg_idx in range(num_timeline_segments):
+            # Calculate proportional distribution
+            start_ratio = seg_idx / num_timeline_segments
+            end_ratio = (seg_idx + 1) / num_timeline_segments
+
+            # Calculate unit range for this segment
+            start_unit = int(unit_idx * num_units / num_timeline_segments)
+            end_unit = int((seg_idx + 1) * num_units / num_timeline_segments)
+
+            # Assign units to segments
+            units_for_segment = []
+            for unit_idx in range(start_unit, end_unit):
+                if unit_idx < num_units:
+                    units_for_segment.append(semantic_units[unit_idx])
+
+            units_per_segment.append(units_for_segment)
+
+        aligned_subs = []
+
+        # Step 5: Create subtitles from semantic units
+        for seg_idx, time_seg in enumerate(timeline_subs):
+            duration = time_seg["end"] - time_seg["start"]
+
+            # Skip zero-duration segments
+            if duration <= 0:
+                continue
+
+            units = units_per_segment[seg_idx]
+
+            if not units:
+                continue
+
+            # Build segment text from units
+            segment_text = ""
+            for unit in units:
+                segment_text += unit + " "
+
+            # Clean up trailing space
+            segment_text = segment_text.strip()
+
+            # Skip if empty
+            if not segment_text:
+                continue
+
+            # If segment text exceeds max_chars, split it
+            if len(segment_text) > max_chars:
+                # Split into max_chars-sized chunks
+                num_chunks = int(len(segment_text) / max_chars) + 1
+                chunk_duration = duration / num_chunks
+
+                for i in range(num_chunks):
+                    chunk_start = i * max_chars
+                    chunk_end = min(chunk_start + max_chars, len(segment_text))
+                    chunk_text = segment_text[chunk_start:chunk_end].strip()
+
+                    if chunk_text:
+                        aligned_subs.append(
+                            {
+                                "start": time_seg["start"] + i * chunk_duration,
+                                "end": min(
+                                    time_seg["start"] + (i + 1) * chunk_duration,
+                                    time_seg["end"],
+                                ),
+                                "text": chunk_text,
+                            }
+                        )
+
+            else:
+                # Single subtitle for this time segment
+                aligned_subs.append(
                     {
-                        "start": sub["start"],
-                        "end": sub["end"],
-                        "duration": sub["end"] - sub["start"],
-                        "text": clean_text,
+                        "start": time_seg["start"],
+                        "end": time_seg["end"],
+                        "text": segment_text,
                     }
                 )
 
-        if not segments:
-            # Fallback to simple splitting
-            return self._split_reference_by_time(
-                ref_text_no_tags, timeline_subs, max_chars
-            )
+        # Step 6: Handle remaining units (if any)
+        # Calculate units assigned
+        total_assigned = sum(len(units) for units in units_per_segment)
 
-        total_audio_duration = segments[-1]["end"] - segments[0]["start"]
+        if total_assigned < num_units:
+            remaining_units = semantic_units[total_assigned:]
 
-        aligned_subs = []
-        ref_pos = 0  # Position in clean text
-
-        for seg_idx, seg in enumerate(segments):
-            if ref_pos >= ref_len:
-                break
-
-            seg_len = len(seg["text"])
-            if seg_len == 0:
-                continue
-
-            # Calculate expected position based on time
-            time_ratio = (
-                seg["duration"] / total_audio_duration
-                if total_audio_duration > 0
-                else 0
-            )
-            expected_pos_by_time = (
-                int(
-                    ref_len
-                    * (seg["start"] - segments[0]["start"])
-                    / total_audio_duration
-                )
-                if total_audio_duration > 0
-                else ref_pos
-            )
-
-            # Use both position heuristics
-            expected_pos = max(ref_pos, expected_pos_by_time - max_chars)
-            expected_pos = min(expected_pos, ref_len - max_chars)
-
-            # Determine window size
-            window_size = min(max_chars * 2, max(seg_len, max_chars))
-
-            best_match = None
-            best_score = 0
-            best_end = ref_pos
-            best_start = ref_pos
-
-            search_start = max(0, expected_pos - window_size)
-            search_end = min(ref_len, expected_pos + window_size * 2)
-
-            for start in range(search_start, search_end):
-                for size_adjust in [-2, -1, 0, 1, 2]:
-                    window_len = max(5, window_size + size_adjust)
-                    end = min(start + window_len, ref_len)
-                    window = ref_clean[start:end]
-
-                    if not window or len(window) < 3:
-                        continue
-
-                    similarity = SequenceMatcher(None, seg["text"], window).ratio()
-                    pos_distance = abs(start - expected_pos)
-                    pos_penalty = (pos_distance / ref_len) * 0.3
-                    len_ratio = min(len(window), seg_len) / max(len(window), seg_len)
-                    len_bonus = len_ratio * 0.1
-                    adjusted_score = similarity - pos_penalty + len_bonus
-
-                    if adjusted_score > best_score:
-                        best_score = adjusted_score
-                        best_match = window
-                        best_end = end
-                        best_start = start
-
-                        if similarity > 0.9:
-                            break
+            if remaining_units:
+                # Try to add to last subtitle
+                if (
+                    aligned_subs
+                    and len(aligned_subs[-1]["text"]) + len(remaining_units[0]) + 1
+                    <= max_chars
+                ):
+                    for unit in remaining_units:
+                        if len(aligned_subs[-1]["text"]) + len(unit) + 1 <= max_chars:
+                            aligned_subs[-1]["text"] += " " + unit
                 else:
-                    continue
-                break
+                    # Create new subtitles for remaining units
+                    if aligned_subs:
+                        last_end = aligned_subs[-1]["end"]
+                    else:
+                        last_end = 0
 
-            if best_match:
-                # Use position mapping to get original text (without bracket tags)
-                orig_start = (
-                    clean_to_orig_no_tags[best_start]
-                    if best_start < len(clean_to_orig_no_tags)
-                    else 0
-                )
+                    for unit in remaining_units:
+                        aligned_subs.append(
+                            {"start": last_end, "end": last_end + 2.0, "text": unit}
+                        )
+                        last_end += 2.0
 
-                # Extract from original (without bracket tags), but skip leading whitespace
-                aligned_text = ref_text_no_tags[orig_start:]
-                # Strip leading whitespace and take up to max_chars
-                aligned_text = aligned_text.lstrip()[:max_chars]
+        # Step 7: Post-processing: merge very short (< 3 chars) subtitles
+        i = 1
+        while i < len(aligned_subs):
+            current = aligned_subs[i]
+            prev = aligned_subs[i - 1]
 
-                # Update ref_pos
-                ref_pos = best_end
+            # Try merging very short subtitle with previous
+            if len(current["text"]) < 3:
+                combined = prev["text"] + " " + current["text"]
+                if len(combined) <= max_chars:
+                    # Merge into previous
+                    prev["text"] = combined
+                    prev["end"] = current["end"]
+                    aligned_subs.pop(i)
+                    continue  # Don't increment i, check same index again
 
-                if aligned_text.strip():
-                    aligned_subs.append(
-                        {
-                            "start": seg["start"],
-                            "end": seg["end"],
-                            "text": aligned_text.strip(),
-                        }
-                    )
-
-        # Handle any remaining reference text
-        if ref_pos < ref_len and ref_pos < len(clean_to_orig_no_tags):
-            orig_start = (
-                clean_to_orig_no_tags[ref_pos]
-                if ref_pos < len(clean_to_orig_no_tags)
-                else 0
-            )
-            remaining = ref_text_no_tags[orig_start:]
-            if aligned_subs:
-                last_end = aligned_subs[-1]["end"]
-            else:
-                last_end = 0
-
-            for i in range(0, len(remaining), max_chars):
-                chunk = remaining[i : i + max_chars].strip()
-                if chunk:
-                    aligned_subs.append(
-                        {"start": last_end, "end": last_end + 2.0, "text": chunk}
-                    )
-                    last_end += 2.0
+            i += 1
 
         return aligned_subs
 
