@@ -368,20 +368,39 @@ class LyricsScroll:
                     semantic_units.append(semantic_chunks[i].strip())
                 i += 1
 
+        # Fallback: If no punctuation found, split into reasonable chunks
+        # This handles cases where reference text has no punctuation marks
+        if len(semantic_units) <= 1 and len(ref_clean) > max_chars:
+            # No meaningful semantic units - split by character count
+            # Try to split at word boundaries (spaces) where possible
+            chunks = ref_clean.split(" ")
+            semantic_units = []
+            current_chunk = ""
+            for chunk in chunks:
+                if len(current_chunk + " " + chunk) <= max_chars:
+                    current_chunk = (
+                        current_chunk + " " + chunk if current_chunk else chunk
+                    )
+                else:
+                    if current_chunk:
+                        semantic_units.append(current_chunk.strip())
+                    current_chunk = chunk
+            if current_chunk:
+                semantic_units.append(current_chunk.strip())
+
         # Step 4: Distribute semantic units across timeline
         num_timeline_segments = len(timeline_subs)
         num_units = len(semantic_units)
 
         # Calculate how many units each time segment should get
         units_per_segment = []
-        unit_idx = 0
         for seg_idx in range(num_timeline_segments):
             # Calculate proportional distribution
             start_ratio = seg_idx / num_timeline_segments
             end_ratio = (seg_idx + 1) / num_timeline_segments
 
             # Calculate unit range for this segment
-            start_unit = int(unit_idx * num_units / num_timeline_segments)
+            start_unit = int(seg_idx * num_units / num_timeline_segments)
             end_unit = int((seg_idx + 1) * num_units / num_timeline_segments)
 
             # Assign units to segments
